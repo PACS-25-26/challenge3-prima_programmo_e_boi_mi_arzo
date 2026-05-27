@@ -70,3 +70,6 @@ Testing/
 
 # Personal settings for libraries
 .vscode
+
+# Executable
+main
