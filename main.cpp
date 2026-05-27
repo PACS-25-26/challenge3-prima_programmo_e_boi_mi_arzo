@@ -2,9 +2,12 @@
 #include <iostream>
 #include <string>
 #include <Eigen/Dense>
+#include <numbers>
+#include <omp.h>
 
 #include "include/Parameters.hpp"
 #include "include/Laplacian.hpp"
+#include "include/PrintVar.hpp"
 
 int main(){
 
@@ -14,7 +17,7 @@ int main(){
     const std::string FileName = "parameters.json";
     Parameters p(FileName);
 
-    // Constexpr parameter for template class creation
+    // Constexpr parameter for template class creation <--- ??? std::array per uno studio di convergenza? ???
     constexpr int Nx = 11;
     constexpr int Ny = 11;
 
@@ -36,21 +39,24 @@ int main(){
     // Apply it to the grid
     Eigen::Array<double, Nx+1, Ny+1> f;
 
+    #pragma omp parallel for
     for(int i=0; i<(Nx+1); ++i)
         for(int j=0; j<(Nx+1); ++j)
             f(i,j) = lambda_f(0.0 + i*h , 0.0 + j*h);
 
-    // --- Initialize the solver ---
+    print_var("f", f);
 
+    // --- Initialize the solver ---
     Operator::Laplacian<Nx, Ny> laplacian( 
-                                    /*bcTop =*/     Eigen::Array<double, 1, Nx+1>::Constant(p.bcTop),
-                                    /*bcBottom =*/  Eigen::Array<double, 1, Nx+1>::Constant(p.bcBottom),
-                                    /*bcLeft =*/    Eigen::Array<double, 1, Ny+1>::Constant(p.bcLeft),
-                                    /*bcRight =*/   Eigen::Array<double, 1, Ny+1>::Constant(p.bcRight),
+                                    /*bcTop =*/     Eigen::Array<double,    1, Nx+1>::Constant(p.bcTop),
+                                    /*bcBottom =*/  Eigen::Array<double,    1, Nx+1>::Constant(p.bcBottom),
+                                    /*bcLeft =*/    Eigen::Array<double, Ny+1,    1>::Constant(p.bcLeft),
+                                    /*bcRight =*/   Eigen::Array<double, Ny+1,     1>::Constant(p.bcRight),
                                     /*f = */ f,
                                     /*h =*/ h
                                 );
-
+    
+    return 0;
 }
 
 
