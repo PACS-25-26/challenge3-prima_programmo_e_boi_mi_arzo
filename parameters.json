@@ -1,0 +1,8 @@
+{
+    "bcTop"     : 1.0,
+    "bcBottom"  : 0.0,
+    "bcLeft"    : 0.0,
+    "bcRight"   : 1.0,
+    "Npar" : 4,
+    "Kmax" : 1e5
+}
