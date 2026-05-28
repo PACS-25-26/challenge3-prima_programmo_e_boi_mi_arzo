@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Eigen/Dense>
+#include <numbers>
+#include <array>
 
 /*
 CONCEPTS ?
@@ -9,11 +10,21 @@ CONCEPTS ?
 // --- Namespace just to avoid conflicts in case we want to do an other one ---
 namespace Test{
 
+constexpr double pi = std::numbers::pi;
+
+// Domain parameters ______________________________________________________________________________________________________________________
+using Point = std::array<double, 2>;
+constexpr Point bottom_left = {0.0, 0.0};
+constexpr Point top_right   = {1.0, 1.0};
+constexpr int Nx = 10;
+constexpr int Ny = 10;
+constexpr double hx = (top_right[0] - bottom_left[0]) / static_cast<double>(Nx);
+constexpr double hy = (top_right[1] - bottom_left[1]) / static_cast<double>(Ny);
+
 // Boundary condition object ______________________________________________________________________________________________________________
-template <typename T>
 struct BoundaryCondition{
-    T operator()(const T& input){
-        return Eigen::Zero(T.rows(), T.cols());
+    double operator()(const double x, const double y) const{
+        return 0.0;
     }
 };
 
@@ -21,18 +32,8 @@ struct BoundaryCondition{
 // Forcing term object _____________________________________________________________________________________________________________________
 // f(x,y) = // 8π2 sin(2πx) sin(2πy)
 struct ForcingTerm{
-    // --- Call operator using two linear algebra - like vectors ---
-    Eigen::ArrayXd operator()(const Eigen::VectorXd& x, const Eigen::VectorXd& y){
-        // Build the grid
-        const Eigen::ArrayXd XY = (x * y.transpose()).array();
-
-        // Return the value
-        return (8.0*EIGEN_PI)*(2.0*EIGEN_PI*XY).sin()*(2.0*EIGEN_PI*XY).sin();
-    }
-
-    // --- Call operator passing the grid ---
-    Eigen::ArrayXd operator()(const Eigen::ArrayXd& grid){
-        return (8.0*EIGEN_PI)*(2.0*EIGEN_PI*grid).sin()*(2.0*EIGEN_PI*grid).sin();
+    double operator()(const double x, const double y) const{
+        return 8 * (pi*pi) * std::sin(2*pi*x) * std::sin(2*pi*y);
     }
 };
 
@@ -40,15 +41,8 @@ struct ForcingTerm{
 // Exact solution ___________________________________________________________________________________________________________________________
 // u_ex(x,y) = sin(2πx) sin(2πy)
 struct ExactSolution{
-    // --- Call operator using two linear algebra - like vectors ---
-    Eigen::ArrayXd operator()(const Eigen::VectorXd& x, const Eigen::VectorXd& y){
-        const Eigen::ArrayXd XY = (x * y.transpose()).array();
-        return (2.0*EIGEN_PI*XY).sin()*(2.0*EIGEN_PI*XY).sin();
-    }
-
-    // --- Call operator passing the grid ---
-    Eigen::ArrayXd operator()(const Eigen::ArrayXd& grid){
-        return (2.0*EIGEN_PI*grid).sin()*(2.0*EIGEN_PI*grid).sin();
+    double operator()(const double x, const double y) const{
+        return std::sin(2*pi*x)*std::sin(2*pi*y);
     }
 };
 
