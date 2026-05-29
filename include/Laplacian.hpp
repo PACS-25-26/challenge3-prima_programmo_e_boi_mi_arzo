@@ -17,7 +17,7 @@ class Laplacian{
         const Eigen::Array<double, Nx+1, 1>       bcBottom;
         const Eigen::Array<double, Ny+1, 1>       bcLeft;
         const Eigen::Array<double, Ny+1, 1>       bcRight;
-        const Eigen::Array<double, Nx+1, Ny+1> f;
+        const Eigen::Array<double, Nx+1, Ny+1>    f;
         const double h2;
     
     public:
@@ -28,30 +28,31 @@ class Laplacian{
             const Eigen::Array<double, Ny+1, 1>& bcR,
             const Eigen::Array<double, Nx+1, Ny+1>& f_,
             const double h_
-        ) : bcTop(bcT),
-            bcBottom(bcB),
-            bcLeft(bcL),
-            bcRight(bcR),
-            h2(h_*h_)
+        ) : bcTop{bcT},
+            bcBottom{bcB},
+            bcLeft{bcL},
+            bcRight{bcR},
+            f{f_},
+            h2{h_*h_}
             {}
 
         void operator()(const Eigen::Array<double, Nx+1, Ny+1>& src, Eigen::Array<double, Nx+1, Ny+1>& dest){
 
-            // Apply the stencil
-            dest.template block<Nx-1, Ny-1>(1, 1) = 
-                0.25*(
-                    src.template    block  <Nx-1, Ny-1>(0, 1)     // top
-                    + src.template  block  <Nx-1, Ny-1>(1, 0)        // left
-                    + src.template  block  <Nx-1, Ny-1>(1, 2)        // right
-                    + src.template  block  <Nx-1, Ny-1>(2, 1)        // bottom
-                    + h2*f.template block  <Nx-1, Ny-1>(1, 1)
-                );    // forcing term
+            // // Apply the stencil
+            // dest.template block<Nx-1, Ny-1>(1, 1) = 
+            //     0.25*(
+            //         src.template    block  <Nx-1, Ny-1>(0, 1)     // top
+            //         + src.template  block  <Nx-1, Ny-1>(1, 0)        // left
+            //         + src.template  block  <Nx-1, Ny-1>(1, 2)        // right
+            //         + src.template  block  <Nx-1, Ny-1>(2, 1)        // bottom
+            //         + h2*f.template block  <Nx-1, Ny-1>(1, 1)
+            //     );    // forcing term
 
-            // // Alternatively a parallel implementation
-            // #pragma parallel for
-            // for(Eigen::Index i = 1; i <= Nx-1; ++i)
-            //     for(Eigen::Index j = 1; j <= Ny-1; ++j)
-            //         dest(i,j) = 0.25*(src(i-1,j) + src(i+1,j) + src(i,j-1) + src(i,j+1) + h2*f(i,j));
+            // Alternatively a parallel implementation
+            #pragma parallel for
+            for(int i = 1; i <= Nx-1; ++i)
+                for(int j = 1; j <= Ny-1; ++j)
+                    dest(i,j) = 0.25*(src(i-1,j) + src(i+1,j) + src(i,j-1) + src(i,j+1) + h2*f(i,j));
 
 
             // Enforce boundary condition(Dirichlet type)

@@ -9,14 +9,15 @@
 #include "include/Laplacian.hpp"
 #include "include/PrintVar.hpp"
 #include "include/Data.hpp"
+#include "include/Jacobi.hpp"
 
 int main(){
 
     // --- Parameters definition ---
 
-    // // Read the parameters from json
-    // const std::string FileName = "parameters.json";
-    // Parameters p(FileName);
+    // Read the parameters from json
+    const std::string FileName = "parameters.json";
+    Parameters p(FileName);
 
     // Spostiamo questi nel json e li decidiamo a runtime ?
     // Constexpr parameter for template class creation <--- ??? std::array per uno studio di convergenza? ???
@@ -33,14 +34,6 @@ int main(){
 
     // Compute h (same for x and y as specified in the text)
     const double h = 1 / static_cast<double>(Nx);
-
-    // --- Define and apply f to the grid ---
-
-    // Define lambda function f
-
-    // auto lambda_f = [pi = std::numbers::pi](double x, double y){ 
-    //     return 8 * (pi*pi) * std::sin(2*pi*x) * std::sin(2*pi*y);
-    // };
 
     // Initialize data
     Test::ForcingTerm       force;
@@ -59,23 +52,23 @@ int main(){
     #pragma omp parallel for collapse(2) schedule(static)
     for(int i=0; i<(Nx+1); ++i){
         for(int j=0; j<(Ny+1); ++j){
-            f(i,j) = force(0.0 + i*h , 0.0 + j*h);
-            u_ex(i,j) = exact_sol(0.0 + i*h , 0.0 + j*h);
+            f(i,j) = force(0.0 + i*hx , 0.0 + j*hy);
+            u_ex(i,j) = exact_sol(0.0 + i*hx , 0.0 + j*hy);
         }
     }
 
     // Fill boundary conditions top and bottom
     #pragma omp parallel for
     for(int i=0; i<(Nx+1); ++i){
-        bcTop(i)    = boundary_condition(bl[0] + i*h, tr[1]);
-        bcBottom(i) = boundary_condition(bl[0] + i*h, bl[1]);
+        bcTop(i)    = boundary_condition(bl[0] + i*hx, tr[1]);
+        bcBottom(i) = boundary_condition(bl[0] + i*hx, bl[1]);
     }
 
     // Fill boundary conditions left and right
     #pragma omp parallel for
     for(int j=0; j<(Ny+1); ++j){
-        bcLeft(j)  = boundary_condition(bl[0], bl[1] + j*h);
-        bcRight(j) = boundary_condition(tr[0], bl[1] + j*h);
+        bcLeft(j)  = boundary_condition(bl[0], bl[1] + j*hy);
+        bcRight(j) = boundary_condition(tr[0], bl[1] + j*hy);
     }
 
 
@@ -96,6 +89,42 @@ int main(){
     //                                 /*f = */ f,
     //                                 /*h =*/ h
     //                             );
+
+    // --- Initialize the solver ---
+    Operator::Laplacian<Nx, Ny> laplacian( 
+        /*bcTop =*/     bcTop,
+        /*bcBottom =*/  bcBottom,
+        /*bcLeft =*/    bcLeft,
+        /*bcRight =*/   bcRight,
+        /*f = */ f,
+        /*h =*/ h
+    );
+
+    // --- Initialize the solution matrix ---
+    Eigen::Array<double, Nx+1, Ny+1> U0{Eigen::Array<double, Nx+1, Ny+1>::Zero()};
+    Eigen::Array<double, Nx+1, Ny+1> U{Eigen::Array<double, Nx+1, Ny+1>::Zero()};
+
+    // --- Solve ---
+    bool converged = false;
+    #pragma parallel for
+    for(unsigned k=0; k < p.maxIt; ++k){
+        laplacian(U0, U);
+
+        if(std::sqrt(h*(U - U0).square().sum()) < p.tol){
+            converged = true;
+            break;
+        }
+
+        U0 = U;
+    }
+
+    if(!converged){
+        std::cout << "Jacobi iterations did not converge!" << std::endl;
+        return 1;
+    }
+    
+    print_var("U", U);
+
     
     return 0;
 }

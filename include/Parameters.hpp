@@ -28,9 +28,8 @@ struct Parameters{
     const double bcBottom;
     const double bcLeft;
     const double bcRight;
-    const int Kmax;
-    const int Npar;
-    const double h;
+    const double tol;
+    const unsigned maxIt;
 
 /* 
    In the following we use a public constructor that makes a call to the
@@ -47,9 +46,8 @@ struct Parameters{
         bcBottom(inputJson["bcBottom"]),
         bcLeft(inputJson["bcLeft"]),
         bcRight(inputJson["bcRight"]),
-        Kmax(inputJson["Kmax"]),
-        Npar(inputJson["Npar"]),
-        h(inputJson["h"])
+        tol(inputJson["tol"]),
+        maxIt(inputJson["maxIt"])
     {
         // Correctly read the parameters
         std::cout<<"Correctly read the json file and set all the parameters"<<std::endl;
