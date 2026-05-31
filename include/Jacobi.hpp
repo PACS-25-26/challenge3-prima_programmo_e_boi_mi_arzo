@@ -41,6 +41,9 @@ class Jacobi{
             }
         }
 
+        // Method to enforce BCs
+        /*to do*/
+
         // Setters
         void set_maxIt(const unsigned maxIt_) { maxIt = maxIt_; }
         void set_tol(const double tol_) { tol = tol_; }

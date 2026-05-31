@@ -28,6 +28,7 @@ struct Parameters{
     const double bcBottom;
     const double bcLeft;
     const double bcRight;
+    const unsigned N;
     const double tol;
     const unsigned maxIt;
 
@@ -46,6 +47,7 @@ struct Parameters{
         bcBottom(inputJson["bcBottom"]),
         bcLeft(inputJson["bcLeft"]),
         bcRight(inputJson["bcRight"]),
+        N(inputJson["N"]),
         tol(inputJson["tol"]),
         maxIt(inputJson["maxIt"])
     {

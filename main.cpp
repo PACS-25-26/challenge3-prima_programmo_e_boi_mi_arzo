@@ -19,21 +19,16 @@ int main(){
     const std::string FileName = "parameters.json";
     Parameters p(FileName);
 
-    // Spostiamo questi nel json e li decidiamo a runtime ?
     // Constexpr parameter for template class creation <--- ??? std::array per uno studio di convergenza? ???
     constexpr Test::Point bl = Test::bottom_left;
     constexpr Test::Point tr = Test::top_right;
-    constexpr int Nx         = Test::Nx; // Nx = number of subinterval in direction x => Nx +1 number of nodes in direction x
-    constexpr int Ny         = Test::Ny; // Ny = number of subinterval in direction y => Ny +1 number of nodes in direction x
-    constexpr double hx      = Test::hx;
-    constexpr double hy      = Test::hy;
-
-    // Check Nx = Ny --> in the exercise a square grid is requested
-    if constexpr(Nx != Ny)
-        std::cerr<<"A square grid is requested, Nx must be equal to Ny"<<std::endl;
 
     // Compute h (same for x and y as specified in the text)
-    const double h = 1 / static_cast<double>(Nx);
+    const double h = 1 / static_cast<double>(p.N);
+
+    // Compute the number of subdivisions in the two directions accordingly to h
+    const unsigned nx = static_cast<unsigned>((tr[0] - bl[0])/h);
+    const unsigned ny = static_cast<unsigned>((tr[1] - bl[1])/h);
 
     // Initialize data
     Test::ForcingTerm       force;
@@ -41,36 +36,35 @@ int main(){
     Test::ExactSolution     exact_sol;
 
     // Initialize grid data
-    Eigen::Array<double, Nx+1, Ny+1> f;
-    Eigen::Array<double, Nx+1, Ny+1> u_ex;
-    Eigen::Array<double, Nx+1,    1> bcTop; // <--- potremmo prenderle dalla soluzione esatta
-    Eigen::Array<double, Nx+1,    1> bcBottom;
-    Eigen::Array<double,    1, Ny+1> bcLeft;
-    Eigen::Array<double,    1, Ny+1> bcRight;
+    Eigen::ArrayXXd    f(nx+1, ny+1);
+    Eigen::ArrayXXd    u_ex(nx+1, ny+1);
+    Eigen::RowVectorXd bcTop(nx+1); // <--- potremmo prenderle dalla soluzione esatta
+    Eigen::RowVectorXd bcBottom(nx+1);
+    Eigen::VectorXd    bcLeft(ny+1);
+    Eigen::VectorXd    bcRight(ny+1);
     
     // --- Fill grid data ---
     #pragma omp parallel for collapse(2) schedule(static)
-    for(int i=0; i<(Nx+1); ++i){
-        for(int j=0; j<(Ny+1); ++j){
-            f(i,j) = force(0.0 + i*hx , 0.0 + j*hy);
-            u_ex(i,j) = exact_sol(0.0 + i*hx , 0.0 + j*hy);
+    for(unsigned i=0; i<(nx+1); ++i){
+        for(unsigned j=0; j<(ny+1); ++j){
+            f(i,j) = force(0.0 + i*h, 0.0 + j*h);
+            u_ex(i,j) = exact_sol(0.0 + i*h , 0.0 + j*h);
         }
     }
 
-    // Fill boundary conditions top and bottom
+    // --- Fill boundary conditions top and bottom ---
     #pragma omp parallel for
-    for(int i=0; i<(Nx+1); ++i){
-        bcTop(i)    = boundary_condition(bl[0] + i*hx, tr[1]);
-        bcBottom(i) = boundary_condition(bl[0] + i*hx, bl[1]);
+    for(unsigned i=0; i<(nx+1); ++i){
+        bcTop(i)    = boundary_condition(bl[0] + i*h, tr[1]);
+        bcBottom(i) = boundary_condition(bl[0] + i*h, bl[1]);
     }
 
-    // Fill boundary conditions left and right
+    // --- Fill boundary conditions left and right ---
     #pragma omp parallel for
-    for(int j=0; j<(Ny+1); ++j){
-        bcLeft(j)  = boundary_condition(bl[0], bl[1] + j*hy);
-        bcRight(j) = boundary_condition(tr[0], bl[1] + j*hy);
+    for(unsigned j=0; j<(ny+1); ++j){
+        bcLeft(j)  = boundary_condition(bl[0], bl[1] + j*h);
+        bcRight(j) = boundary_condition(tr[0], bl[1] + j*h);
     }
-
 
     // Check correctness
     print_var("f", f);
@@ -80,18 +74,9 @@ int main(){
     print_var("bcRight", bcRight);
     print_var("u_ex", u_ex);
 
-    // // --- Initialize the solver ---
-    // Operator::Laplacian<Nx, Ny> laplacian( 
-    //                                 /*bcTop =*/     Eigen::Array<double,    1, Nx+1>::Constant(p.bcTop),
-    //                                 /*bcBottom =*/  Eigen::Array<double,    1, Nx+1>::Constant(p.bcBottom),
-    //                                 /*bcLeft =*/    Eigen::Array<double, Ny+1,    1>::Constant(p.bcLeft),
-    //                                 /*bcRight =*/   Eigen::Array<double, Ny+1,     1>::Constant(p.bcRight),
-    //                                 /*f = */ f,
-    //                                 /*h =*/ h
-    //                             );
 
     // --- Initialize the solver ---
-    Operator::Laplacian<Nx, Ny> laplacian( 
+    Operator::Laplacian laplacian( 
         /*bcTop =*/     bcTop,
         /*bcBottom =*/  bcBottom,
         /*bcLeft =*/    bcLeft,
@@ -101,12 +86,11 @@ int main(){
     );
 
     // --- Initialize the solution matrix ---
-    Eigen::Array<double, Nx+1, Ny+1> U0{Eigen::Array<double, Nx+1, Ny+1>::Zero()};
-    Eigen::Array<double, Nx+1, Ny+1> U{Eigen::Array<double, Nx+1, Ny+1>::Zero()};
+    Eigen::ArrayXXd U0{Eigen::ArrayXXd::Zero(nx+1, ny+1)};
+    Eigen::ArrayXXd U{Eigen::ArrayXXd::Zero(nx+1, ny+1)};
 
     // --- Solve ---
     bool converged = false;
-    #pragma parallel for
     for(unsigned k=0; k < p.maxIt; ++k){
         laplacian(U0, U);
 
