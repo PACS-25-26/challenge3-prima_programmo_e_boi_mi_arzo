@@ -67,13 +67,14 @@ int main(){
     }
 
     // Check correctness
+    /*
     print_var("f", f);
     print_var("bcTop", bcTop);
     print_var("bcBottom", bcBottom);
     print_var("bcLeft", bcLeft);
     print_var("bcRight", bcRight);
     print_var("u_ex", u_ex);
-
+    */
 
     // --- Initialize the solver ---
     Operator::Laplacian laplacian( 
@@ -92,16 +93,20 @@ int main(){
     // --- Solve ---
     bool converged = false;
     for(unsigned k=0; k < p.maxIt; ++k){
+        // Apply the stencil 
         laplacian(U0, U);
 
+        // Check convergence
         if(std::sqrt(h*(U - U0).square().sum()) < p.tol){
             converged = true;
             break;
         }
 
+        // Update step
         U0 = U;
     }
 
+    // If convergence was not reached within maxIt print a message
     if(!converged){
         std::cout << "Jacobi iterations did not converge!" << std::endl;
         return 1;

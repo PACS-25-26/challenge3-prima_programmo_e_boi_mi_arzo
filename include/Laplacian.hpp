@@ -41,28 +41,23 @@ class Laplacian{
             bcRight{bcR},
             f{f_},
             h2{h_*h_},
-            nx{bcB.cols()},
-            ny{bcL.rows()}
-            {}
+            nx{bcB.cols()-1},
+            ny{bcL.rows()-1}
+            { }
 
         void operator()(const Eigen::ArrayXXd& src, Eigen::ArrayXXd& dest){
 
             // Parallel for to apply the stencil implementation
             #pragma omp parallel for collapse(2) schedule(static)
-            for(int i = 1; i <= nx-1; ++i)
-                for(int j = 1; j <= ny-1; ++j)
+            for(unsigned i = 1; i <= nx-1; ++i)
+                for(unsigned j = 1; j <= ny-1; ++j)
                     dest(i,j) = 0.25*(src(i-1,j) + src(i+1,j) + src(i,j-1) + src(i,j+1) + h2*f(i,j));
-
-            std::cout << "éééééééééééé" << std::endl;
-
 
             // Enforce boundary condition(Dirichlet type)
             dest.row(0)             = bcBottom;
             dest.row(dest.rows()-1) = bcTop;
             dest.col(0)             = bcLeft;
             dest.col(dest.cols()-1) = bcRight;
-
-            std::cout << "éééééééééééé" << std::endl;
          
         }
 };
