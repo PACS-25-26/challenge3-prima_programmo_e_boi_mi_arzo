@@ -31,6 +31,8 @@ int main(int argc, char** argv){
     Test::ForcingTerm       force;
     Test::BoundaryCondition boundary_condition;
     Test::ExactSolution     exact_sol;
+  
+    //______________________________________________________________________________________
 
     // --- Parameters reading made by rank 0---
     if (rank == 0){
@@ -61,90 +63,157 @@ int main(int argc, char** argv){
 
     // If you want we can rebuild the parameter object in local????
 
-    // Compute number of 
-   
+    // Compute number of rows assigned to each rank balancing eccess
+    unsigned quotient = nx / size;
+    unsigned unmatchedRows = nx % size;
+    unsigned local_nx = (rank < unmatchedRows) ? (quotient+1) : quotient; 
 
-    // Initialize grid data
-    Eigen::ArrayXXd    f(nx+1, ny+1);
-    Eigen::ArrayXXd    u_ex(nx+1, ny+1);
-    Eigen::RowVectorXd bcTop(nx+1); // <--- potremmo prenderle dalla soluzione esatta
-    Eigen::RowVectorXd bcBottom(nx+1);
-    Eigen::VectorXd    bcLeft(ny+1);
-    Eigen::VectorXd    bcRight(ny+1);
+    //______________________________________________________________________________________
+
+    // TODO cambiare le boundary con u_ex
+
+
+    // --- Initialize top and bottom boundary conditions for the local problem ---
     
-    // --- Fill grid data ---
+    // For rank 0 and rank size --> use top and bottom, for the others use 0 as empty initialization
+    Eigen::VectorXd local_bcTop = Eigen::VectorXd::Zero(local_nx+1); // <--- potremmo prenderle dalla soluzione esatta
+    Eigen::VectorXd local_bcBottom = Eigen::VectorXd::Zero(local_nx+1);
+    
+    // Overwrite the top and bottom boundaries
+    if(rank == 0){
+        #pragma omp parallel for
+        for(unsigned i=0; i<(local_nx+1); ++i)
+            local_bcTop(i) = boundary_condition(bl[0] + i*h, tr[1]);
+    }
+    else if(rank == size-1){
+        #pragma omp parallel for
+        for(unsigned i=0; i<(local_nx+1); ++i)
+         local_bcBottom(i) = boundary_condition(bl[0] + i*h, bl[1]);
+    }
+
+    // --- Initialize left and right boundary conditions for the local problem ---
+
+    // For all the rank initialize boundary condition on the left and right with 
+    // the boundaries condition given in the exercise 
+    Eigen::VectorXd local_bcLeft(ny+1);
+    Eigen::VectorXd local_bcRight(ny+1);
+    
+    #pragma omp parallel for
+    for(unsigned j=0; j<(ny+1); ++j){
+        local_bcLeft(j)  = boundary_condition(bl[0], bl[1] + j*h);
+        local_bcRight(j) = boundary_condition(tr[0], bl[1] + j*h);
+    }
+
+    //______________________________________________________________________________________
+
+    // --- Initialize local grid data ---
+    Eigen::ArrayXXd local_f{local_nx+1, ny+1};
+    Eigen::ArrayXXd local_u_ex{local_nx+1, ny+1};
+
+    // --- Initialize the local final solution matrix ---
+    Eigen::ArrayXXd local_U0{Eigen::ArrayXXd::Zero(local_nx+1, ny+1)};
+    Eigen::ArrayXXd local_U {Eigen::ArrayXXd::Zero(local_nx+1, ny+1)};
+
+     // --- Fill grid data ---
     #pragma omp parallel for collapse(2) schedule(static)
-    for(unsigned i=0; i<(nx+1); ++i){
+    for(unsigned i=0; i<(local_nx+1); ++i){
         for(unsigned j=0; j<(ny+1); ++j){
-            f(i,j) = force(0.0 + i*h, 0.0 + j*h);
-            u_ex(i,j) = exact_sol(0.0 + i*h , 0.0 + j*h);
+            local_f(i,j) = force(0.0 + i*h, 0.0 + j*h);
+            local_u_ex(i,j) = exact_sol(0.0 + i*h , 0.0 + j*h);
         }
     }
 
-    // --- Fill boundary conditions top and bottom ---
-    #pragma omp parallel for
-    for(unsigned i=0; i<(nx+1); ++i){
-        bcTop(i)    = boundary_condition(bl[0] + i*h, tr[1]);
-        bcBottom(i) = boundary_condition(bl[0] + i*h, bl[1]);
-    }
 
-    // --- Fill boundary conditions left and right ---
-    #pragma omp parallel for
-    for(unsigned j=0; j<(ny+1); ++j){
-        bcLeft(j)  = boundary_condition(bl[0], bl[1] + j*h);
-        bcRight(j) = boundary_condition(tr[0], bl[1] + j*h);
-    }
+    //______________________________________________________________________________________
 
-    // Check correctness
-    /*
-    print_var("f", f);
-    print_var("bcTop", bcTop);
-    print_var("bcBottom", bcBottom);
-    print_var("bcLeft", bcLeft);
-    print_var("bcRight", bcRight);
-    print_var("u_ex", u_ex);
-    */
+    // TODO
 
     // --- Initialize the solver ---
     Operator::Laplacian laplacian( 
-        /*bcTop =*/     bcTop,
-        /*bcBottom =*/  bcBottom,
-        /*bcLeft =*/    bcLeft,
-        /*bcRight =*/   bcRight,
-        /*f = */ f,
+        /*local_bcTop =*/     local_bcTop,
+        /*local_bcBottom =*/  local_bcBottom,
+        /*local_bcLeft =*/    local_bcLeft,
+        /*local_bcRight =*/   local_bcRight,
+        /*local_f = */ local_f,
         /*h = */ h
     );
 
-    // --- Initialize the solution matrix ---
-    Eigen::ArrayXXd U0{Eigen::ArrayXXd::Zero(nx+1, ny+1)};
-    Eigen::ArrayXXd U{Eigen::ArrayXXd::Zero(nx+1, ny+1)};
-
+    
+    
 
 
 
     // --- Solve ---
-    bool converged = false;
-    for(unsigned k=0; k < maxIt; ++k){
-        // Apply the stencil 
-        laplacian(U0, U);
+    int global_converged = false;
+    bool local_converged = false;
 
-        // Check convergence
-        if(std::sqrt(h*(U - U0).square().sum()) < tol){
-            converged = true;
-            break;
+    for(unsigned k=0; k < maxIt; ++k){
+
+        // Send and receive necessary data of the common rows
+
+        // TODO
+
+        // Apply the stencil to the local grid
+        laplacian(local_U0, local_U);
+
+        // --- Check global convergence ---
+
+        // Check local convergence (su cosa va testata? tol comune o va divisa?)
+        if(std::sqrt(h*(local_U - local_U0).square().sum()) < tol){
+            local_converged = true;
         }
 
+        // Check global convergence
+        MPI_Allreduce(&local_converged, &global_converged, 1, MPI_INT, MPI_LAND, MPI_COMM_WORLD);
+
+        // Checks convergence
+        if(global_converged)
+            break;
+
         // Update step
-        U0 = U;
+        local_U0 = local_U;
     }
 
     // If convergence was not reached within maxIt print a message
-    if(!converged){
-        std::cout << "Jacobi iterations did not converge!" << std::endl;
-        return 1;
+    if(rank == 0){
+        if(!global_converged){
+            std::cout << "Jacobi iterations did not converge!" << std::endl;
+            return 1;
+        }
     }
-    
-    print_var("U", U);
+
+    //______________________________________________________________________________________    
+
+    // --- Compose all the solution matrix ---
+
+    // Declare the empty variable for all the ranks
+    Eigen::ArrayXXd global_U;
+
+    // Prepare to receive global U
+    std::vector<int> recvcounts(size, 0);
+    std::vector<int> offsets(size, 0);
+
+    if(rank == 0){
+        // Resize it only for rank 0
+        global_U.resize(nx+1, ny+1);
+
+        int sum = 0;
+
+        // Keep trace of how many elements each process has
+        for(int i = 0; i < size; ++i) {
+            int rows_i = (i < unmatchedRows) ? (quotient+1) : quotient;
+            recvcounts[i] = (rows_i + 1) * (ny + 1);
+            offsets[i] = sum;
+            sum += recvcounts[i];
+        }
+    }    
+
+    // Gatherv della U
+    MPI_Gatherv(local_U.data(), local_U.size(), MPI_DOUBLE, global_U.data(), 
+                recvcounts.data(), offsets.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    // Display the solution 
+    print_var("Global U", global_U);
 
     
     return 0;

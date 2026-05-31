@@ -15,7 +15,7 @@ constexpr double pi = std::numbers::pi;
 // Domain parameters ______________________________________________________________________________________________________________________
 using Point = std::array<double, 2>;
 constexpr Point bottom_left = {0.0, 0.0};
-constexpr Point top_right   = {1.0, 1.0};
+constexpr Point top_right   = {1.5, 1.0};
 
 // Boundary condition object ______________________________________________________________________________________________________________
 struct BoundaryCondition{
