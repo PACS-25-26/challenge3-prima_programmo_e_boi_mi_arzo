@@ -31,7 +31,6 @@ struct Parameters{
     const unsigned N;
     const double tol;
     const unsigned maxIt;
-    const unsigned nParTasks;
 
 /* 
    In the following we use a public constructor that makes a call to the
@@ -50,8 +49,7 @@ struct Parameters{
         bcRight(inputJson["bcRight"]),
         N(inputJson["N"]),
         tol(inputJson["tol"]),
-        maxIt(inputJson["maxIt"]),
-        nParTasks(inputJson["nParTasks"])
+        maxIt(inputJson["maxIt"])
     {
         // Correctly read the parameters
         std::cout<<"Correctly read the json file and set all the parameters"<<std::endl;

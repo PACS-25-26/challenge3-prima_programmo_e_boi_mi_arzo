@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 #include <numbers>
 #include <omp.h>
+#include <mpi.h>
 
 #include "include/Parameters.hpp"
 #include "include/Laplacian.hpp"
@@ -11,29 +12,57 @@
 #include "include/Data.hpp"
 #include "include/Jacobi.hpp"
 
-int main(){
+int main(int argc, char** argv){
+    // --- Initialization for MPI ---
+    MPI_Init(&argc, &argv);
 
-    // --- Parameters definition ---
+    // Get rank and size
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    // Read the parameters from json
-    const std::string FileName = "parameters.json";
-    Parameters p(FileName);
+    // Declare common variables
+    unsigned nx, ny, maxIt;
+    double h, tol;
 
-    // Constexpr parameter for template class creation <--- ??? std::array per uno studio di convergenza? ???
+    // Declare boundary points and common functions
     constexpr Test::Point bl = Test::bottom_left;
     constexpr Test::Point tr = Test::top_right;
-
-    // Compute h (same for x and y as specified in the text)
-    const double h = 1 / static_cast<double>(p.N);
-
-    // Compute the number of subdivisions in the two directions accordingly to h
-    const unsigned nx = static_cast<unsigned>((tr[0] - bl[0])/h);
-    const unsigned ny = static_cast<unsigned>((tr[1] - bl[1])/h);
-
-    // Initialize data
     Test::ForcingTerm       force;
     Test::BoundaryCondition boundary_condition;
     Test::ExactSolution     exact_sol;
+
+    // --- Parameters reading made by rank 0---
+    if (rank == 0){
+        // Read the parameters from json
+        const std::string FileName = "parameters.json";
+        Parameters p(FileName);
+
+        // Compute h (same for x and y as specified in the text)
+        h = 1 / static_cast<double>(p.N);
+
+        // Compute the number of subdivisions in the two directions accordingly to h
+        nx = static_cast<unsigned>((tr[0] - bl[0])/h);
+        ny = static_cast<unsigned>((tr[1] - bl[1])/h);
+
+        // Assign max number of iterations for the Broadcast
+        maxIt = p.maxIt;
+
+        // Assign tollerance for the Broadcast
+        tol = p.tol;
+    }
+
+    // --- Rank 0 Broadcasts parameters to all the ranks ---
+    MPI_Bcast(&nx, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&ny, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&maxIt, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&h, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&tol, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    // If you want we can rebuild the parameter object in local????
+
+    // Compute number of 
+   
 
     // Initialize grid data
     Eigen::ArrayXXd    f(nx+1, ny+1);
@@ -83,21 +112,24 @@ int main(){
         /*bcLeft =*/    bcLeft,
         /*bcRight =*/   bcRight,
         /*f = */ f,
-        /*h =*/ h
+        /*h = */ h
     );
 
     // --- Initialize the solution matrix ---
     Eigen::ArrayXXd U0{Eigen::ArrayXXd::Zero(nx+1, ny+1)};
     Eigen::ArrayXXd U{Eigen::ArrayXXd::Zero(nx+1, ny+1)};
 
+
+
+
     // --- Solve ---
     bool converged = false;
-    for(unsigned k=0; k < p.maxIt; ++k){
+    for(unsigned k=0; k < maxIt; ++k){
         // Apply the stencil 
         laplacian(U0, U);
 
         // Check convergence
-        if(std::sqrt(h*(U - U0).square().sum()) < p.tol){
+        if(std::sqrt(h*(U - U0).square().sum()) < tol){
             converged = true;
             break;
         }
