@@ -17,14 +17,6 @@ using Point = std::array<double, 2>;
 constexpr Point bottom_left = {0.0, 0.0};
 constexpr Point top_right   = {1.5, 1.0};
 
-// Boundary condition object ______________________________________________________________________________________________________________
-struct BoundaryCondition{
-    double operator()(const double x, const double y) const{
-        return 0.0;
-    }
-};
-
-
 // Forcing term object _____________________________________________________________________________________________________________________
 // f(x,y) = // 8π2 sin(2πx) sin(2πy)
 struct ForcingTerm{
@@ -41,6 +33,9 @@ struct ExactSolution{
         return std::sin(2*pi*x)*std::sin(2*pi*y);
     }
 };
+
+// Boundary condition alias ______________________________________________________________________________________________________________
+using BoundaryCondition = ExactSolution;
 
 
 }

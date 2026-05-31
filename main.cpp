@@ -29,8 +29,9 @@ int main(int argc, char** argv){
     constexpr Test::Point bl = Test::bottom_left;
     constexpr Test::Point tr = Test::top_right;
     Test::ForcingTerm       force;
-    Test::BoundaryCondition boundary_condition;
     Test::ExactSolution     exact_sol;
+    Test::BoundaryCondition boundary_condition; // same as ExactSolution thanks to alias
+
   
     //______________________________________________________________________________________
 
@@ -61,8 +62,6 @@ int main(int argc, char** argv){
     MPI_Bcast(&h, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Bcast(&tol, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    // If you want we can rebuild the parameter object in local????
-
     // Compute number of rows assigned to each rank balancing eccess
     unsigned quotient = nx / size;
     unsigned unmatchedRows = nx % size;
@@ -70,13 +69,10 @@ int main(int argc, char** argv){
 
     //______________________________________________________________________________________
 
-    // TODO cambiare le boundary con u_ex
-
-
     // --- Initialize top and bottom boundary conditions for the local problem ---
     
     // For rank 0 and rank size --> use top and bottom, for the others use 0 as empty initialization
-    Eigen::VectorXd local_bcTop = Eigen::VectorXd::Zero(local_nx+1); // <--- potremmo prenderle dalla soluzione esatta
+    Eigen::VectorXd local_bcTop = Eigen::VectorXd::Zero(local_nx+1); 
     Eigen::VectorXd local_bcBottom = Eigen::VectorXd::Zero(local_nx+1);
     
     // Overwrite the top and bottom boundaries
@@ -107,26 +103,29 @@ int main(int argc, char** argv){
     //______________________________________________________________________________________
 
     // --- Initialize local grid data ---
-    Eigen::ArrayXXd local_f{local_nx+1, ny+1};
-    Eigen::ArrayXXd local_u_ex{local_nx+1, ny+1};
+    Eigen::ArrayXXd local_f{(local_nx+1)+2, ny+1};
+    Eigen::ArrayXXd local_u_ex{(local_nx+1)+2, ny+1};
 
-    // --- Initialize the local final solution matrix ---
-    Eigen::ArrayXXd local_U0{Eigen::ArrayXXd::Zero(local_nx+1, ny+1)};
-    Eigen::ArrayXXd local_U {Eigen::ArrayXXd::Zero(local_nx+1, ny+1)};
+    // --- Initialize the local final solution matrix with ghost rows ---
+    Eigen::ArrayXXd local_U0{Eigen::ArrayXXd::Zero((local_nx+1)+2 , ny+1)};
+    Eigen::ArrayXXd local_U {Eigen::ArrayXXd::Zero((local_nx+1)+2, ny+1)};
 
-     // --- Fill grid data ---
+    // --- Fill grid data ---
+    // Compute the offset
+    unsigned row_offset = 0;
+    for(int r = 0; r < rank; ++r)
+        row_offset += (r < unmatchedRows) ? (quotient+1) : quotient;
+
+    // Update all the rows, also the upper ghost of the rank 0 (never used) 
     #pragma omp parallel for collapse(2) schedule(static)
-    for(unsigned i=0; i<(local_nx+1); ++i){
-        for(unsigned j=0; j<(ny+1); ++j){
-            local_f(i,j) = force(0.0 + i*h, 0.0 + j*h);
-            local_u_ex(i,j) = exact_sol(0.0 + i*h , 0.0 + j*h);
+    for(unsigned i = 0; i < (local_nx+1)+2; ++i){
+        for(unsigned j = 0; j < ny+1; ++j){
+            local_f(i, j)    = force(    bl[0] + (row_offset-1 + i)*h, bl[1] + j*h);
+            local_u_ex(i, j) = exact_sol(bl[0] + (row_offset-1 + i)*h, bl[1] + j*h);
         }
     }
 
-
     //______________________________________________________________________________________
-
-    // TODO
 
     // --- Initialize the solver ---
     Operator::Laplacian laplacian( 
@@ -135,13 +134,11 @@ int main(int argc, char** argv){
         /*local_bcLeft =*/    local_bcLeft,
         /*local_bcRight =*/   local_bcRight,
         /*local_f = */ local_f,
-        /*h = */ h
+        /*h = */ h,
+        /*rank =*/ rank,
+        /*size = */ size,
+        /*nx = */ local_nx
     );
-
-    
-    
-
-
 
     // --- Solve ---
     int global_converged = false;
@@ -149,11 +146,25 @@ int main(int argc, char** argv){
 
     for(unsigned k=0; k < maxIt; ++k){
 
-        // Send and receive necessary data of the common rows
+        // --- Send and receive necessary data of the common rows ---
 
-        // TODO
+        // Exchange with upper rank --> send my top row, in the upper ghost row
+        if(rank < size-1)
+            MPI_Sendrecv(
+                local_U0.row(local_nx).data(),   ny+2, MPI_DOUBLE, rank+1, 0,
+                local_U0.row(local_nx+1).data(), ny+2, MPI_DOUBLE, rank+1, 0,
+                MPI_COMM_WORLD, MPI_STATUS_IGNORE
+            );
 
-        // Apply the stencil to the local grid
+        // Exchange with lower rank --> send my bottom row, in the lower ghost row
+        if(rank >0 )
+            MPI_Sendrecv(
+                local_U0.row(1).data(), ny+2, MPI_DOUBLE, rank-1, 0,
+                local_U0.row(0).data(), ny+2, MPI_DOUBLE, rank-1, 0,
+                MPI_COMM_WORLD, MPI_STATUS_IGNORE
+            );
+
+        //  --- Apply the stencil to the local grid ---
         laplacian(local_U0, local_U);
 
         // --- Check global convergence ---
@@ -208,8 +219,8 @@ int main(int argc, char** argv){
         }
     }    
 
-    // Gatherv della U
-    MPI_Gatherv(local_U.data(), local_U.size(), MPI_DOUBLE, global_U.data(), 
+    // Gatherv just the internal part of U
+    MPI_Gatherv(local_U.data() + (ny+1), (local_nx+1)*(ny+1), MPI_DOUBLE, global_U.data(), 
                 recvcounts.data(), offsets.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
     // Display the solution 
