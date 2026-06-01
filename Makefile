@@ -1,7 +1,7 @@
-CXX      ?= g++
+CXX      = mpic++ # Use MPI compiler
 CXXFLAGS ?= -std=c++20
-CPPFLAGS ?= -fopenmp -O3 -Wall -I. -I/include -I/usr/include/eigen3 -I/usr/include/nlohmann
-LDLIBS   ?= 
+CPPFLAGS ?= -fopenmp -O3 -Wall -I. -I/include -I/usr/include/eigen3 -I/usr/include/nlohmann -I/usr/include/openmpi/include
+#LDLIBS   ?= 
 LINK.o := $(LINK.cc) # Use C++ linker.
 
 DEPEND = make.dep
@@ -15,6 +15,7 @@ OBJS = $(SRCS:.cpp=.o)
 all: $(DEPEND) $(EXEC)
 
 $(EXEC): $(OBJS)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OBJS) -o $@ -fopenmp
 
 $(OBJS): %.o: %.cpp
 

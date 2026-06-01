@@ -27,8 +27,7 @@ class Jacobi{
             // Convergence flag 
             bool converged = false;
 
-            // Parallel loop 
-            #pragma parallel for
+            // Sequential loop because each iteration depends from the previous one 
             for(unsigned k = 0; k < maxIt; ++k){
                 op(src, dest);
 
