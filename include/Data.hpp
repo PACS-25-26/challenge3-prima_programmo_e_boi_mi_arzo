@@ -15,7 +15,7 @@ constexpr double pi = std::numbers::pi;
 // Domain parameters ______________________________________________________________________________________________________________________
 using Point = std::array<double, 2>;
 constexpr Point bottom_left = {0.0, 0.0};
-constexpr Point top_right   = {1.5, 1.0};
+constexpr Point top_right   = {1.0, 1.0};
 
 // Forcing term object _____________________________________________________________________________________________________________________
 // f(x,y) = // 8π2 sin(2πx) sin(2πy)
@@ -33,9 +33,6 @@ struct ExactSolution{
         return std::sin(2*pi*x)*std::sin(2*pi*y);
     }
 };
-
-// Boundary condition alias ______________________________________________________________________________________________________________
-using BoundaryCondition = ExactSolution;
 
 
 }
