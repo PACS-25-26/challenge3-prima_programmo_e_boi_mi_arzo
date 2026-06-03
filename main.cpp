@@ -106,7 +106,6 @@ int main(){
 
     // --- Solve ---
     bool converged = false;
-    #pragma parallel for
     for(unsigned k=0; k < p.maxIt; ++k){
         laplacian(U0, U);
 

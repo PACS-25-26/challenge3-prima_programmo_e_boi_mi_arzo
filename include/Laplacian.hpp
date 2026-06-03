@@ -49,7 +49,7 @@ class Laplacian{
             //     );    // forcing term
 
             // Alternatively a parallel implementation
-            #pragma parallel for
+            #pragma omp parallel for collapse(2) schedule(static)
             for(int i = 1; i <= Nx-1; ++i)
                 for(int j = 1; j <= Ny-1; ++j)
                     dest(i,j) = 0.25*(src(i-1,j) + src(i+1,j) + src(i,j-1) + src(i,j+1) + h2*f(i,j));
