@@ -1,8 +1,4 @@
 {
-    "bcTop"     : 1.0,
-    "bcBottom"  : 0.0,
-    "bcLeft"    : 0.0,
-    "bcRight"   : 1.0,
     "N_ref"     : 4,
     "tol"       : 1e-8,
     "maxIt"     : 1e6

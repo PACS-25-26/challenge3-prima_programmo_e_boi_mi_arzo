@@ -5,6 +5,7 @@
 #include <numbers>
 #include <omp.h>
 #include <mpi.h>
+#include <chrono>
 
 #include "include/Parameters.hpp"
 #include "include/Laplacian.hpp"
@@ -12,17 +13,44 @@
 #include "include/Data.hpp"
 
 int main(int argc, char** argv){
-
+    
     // Alias __________________________________________________________________________________
     using ArrayXXd = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic/*, Eigen::RowMajor*/>;
 
     // MPI setup ______________________________________________________________________________
-    MPI_Init(&argc, &argv);
+    int provided;
+    // Request FUNNELED mode
+    MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+
+    if (provided < MPI_THREAD_FUNNELED) {
+        std::cerr << "Error: MPI library does not provide enough thread support!" << std::endl;
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    // Read thread count from arguments
+    int num_threads = 1;
+    if (argc >= 2) {
+        num_threads = std::atoi(argv[1]);
+    }
+    omp_set_num_threads(num_threads);
 
     // Get rank and size
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+
+    // Check the number of processors and threads
+    #pragma omp parallel
+    {
+        int thread_id = omp_get_thread_num();
+        #pragma omp critical
+        {
+            std::cout << "[MPI Rank " << rank << "/" << size 
+                      << "] Thread " << thread_id << "/" << num_threads 
+                      << " is running." << std::endl;
+        }
+    }
 
     // Data ___________________________________________________________________________________
     // Domain parameters

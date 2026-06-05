@@ -24,10 +24,6 @@ static json load(const std::string& fileName){
 
 // --- STRUCT PARAMETERS ---
 struct Parameters{
-    const double bcTop;
-    const double bcBottom;
-    const double bcLeft;
-    const double bcRight;
     const unsigned N;
     const double tol;
     const unsigned maxIt;
@@ -43,10 +39,6 @@ struct Parameters{
 
     // Real constructor
     Parameters(const json& inputJson) :
-        bcTop(inputJson["bcTop"]),
-        bcBottom(inputJson["bcBottom"]),
-        bcLeft(inputJson["bcLeft"]),
-        bcRight(inputJson["bcRight"]),
         N(std::pow(2, static_cast<unsigned>(inputJson["N_ref"]))),
         tol(inputJson["tol"]),
         maxIt(inputJson["maxIt"])
