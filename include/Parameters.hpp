@@ -47,7 +47,7 @@ struct Parameters{
         bcBottom(inputJson["bcBottom"]),
         bcLeft(inputJson["bcLeft"]),
         bcRight(inputJson["bcRight"]),
-        N(inputJson["N"]),
+        N(std::pow(2, static_cast<unsigned>(inputJson["N_ref"]))),
         tol(inputJson["tol"]),
         maxIt(inputJson["maxIt"])
     {

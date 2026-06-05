@@ -9,7 +9,7 @@ namespace Operator{
 
 class Laplacian{
 
-    using ArrayXXd = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+    using ArrayXXd = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic/*, Eigen::RowMajor*/>;
 
     private:
         const Eigen::ArrayXXd f;

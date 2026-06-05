@@ -10,33 +10,36 @@
 #include "include/Laplacian.hpp"
 #include "include/PrintVar.hpp"
 #include "include/Data.hpp"
-#include "include/Jacobi.hpp"
 
 int main(int argc, char** argv){
-    // --- Initialization for MPI ---
-    MPI_Init(&argc, &argv);
 
-    using ArrayXXd = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+    // Alias __________________________________________________________________________________
+    using ArrayXXd = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic/*, Eigen::RowMajor*/>;
+
+    // MPI setup ______________________________________________________________________________
+    MPI_Init(&argc, &argv);
 
     // Get rank and size
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    // Declare common variables
-    int nx, ny, maxIt;
-    double h, tol;
-
-    // Declare boundary points and common functions
+    // Data ___________________________________________________________________________________
+    // Domain parameters
+    int nx, ny;
+    double h;
     constexpr Test::Point bl = Test::bottom_left;
     constexpr Test::Point tr = Test::top_right;
-    Test::ForcingTerm       force;
-    Test::ExactSolution     exact_sol;
+    
+    // Solver parameters
+    int maxIt;
+    double tol;
 
-  
-    //______________________________________________________________________________________
+    // Physical data
+    Test::ForcingTerm   force;
+    Test::ExactSolution exact_sol;
 
-    // --- Parameters reading made by rank 0---
+    // --- Parameters reading made by rank 0 only ---
     if (rank == 0){
         // Read the parameters from json
         const std::string FileName = "parameters.json";
@@ -57,138 +60,171 @@ int main(int argc, char** argv){
     }
 
     // --- Rank 0 Broadcasts parameters to all the ranks ---
-    MPI_Bcast(&nx, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&ny, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&maxIt, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&h, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&tol, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&nx,    1, MPI_INT,    0, MPI_COMM_WORLD);
+    MPI_Bcast(&ny,    1, MPI_INT,    0, MPI_COMM_WORLD);
+    MPI_Bcast(&maxIt, 1, MPI_INT,    0, MPI_COMM_WORLD);
+    MPI_Bcast(&h,     1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&tol,   1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    //______________________________________________________________________________________
+    // Data splitting parameters ______________________________________________________________
    
-    // Compute number of rows assigned to each rank balancing eccess
-    int evenRows        = (nx+1) / size;
-    int unmatchedRows   = (nx+1) % size;
-    int baseRowsPerRank = (static_cast<int>(rank) < unmatchedRows) ? (evenRows+1) : evenRows; 
+    // --- Compute number of cols assigned to each rank balancing eccess ---
+    MPI_Barrier(MPI_COMM_WORLD);
+    int evenCols        = (ny+1) / size;
+    int unmatchedCols   = (ny+1) % size - 1;
+    int baseColsPerRank = (static_cast<int>(rank) < unmatchedCols) ? (evenCols+1) : evenCols; 
+    // std::cout << "rank = "<< rank << ", evenCols = " << evenCols << std::endl;
+    // std::cout << "rank = "<< rank << ", unmatchedCols = " << unmatchedCols << std::endl; 
+    // std::cout << "rank = "<< rank << ", baseColsPerRank = " << baseColsPerRank << std::endl; 
 
-    // Compute the offset in terms of rows from 0
-    int row_offset = 0;
+    // --- Compute the offset in terms of cols from 0 ---
+    int col_offset = 0;
     for(int r = 0; r < rank; ++r)
-        row_offset += (r < unmatchedRows) ? (evenRows+1) : evenRows;
+        col_offset += (r < unmatchedCols) ? (evenCols+1) : evenCols;
+    if(rank != 0)
+        col_offset -= 1;
+    // std::cout << "rank = "<< rank << ", col_offset = " << col_offset << std::endl; 
 
-    // Define effective number of rows (points) as (number of segments +1) +2 ghost rows
-    int local_rows = (rank == 0 || rank == size - 1) ? (baseRowsPerRank + 1) : (baseRowsPerRank + 2);
+    // --- Define effective number of cols (points) ---
+    int local_cols = (rank != 0) ? (baseColsPerRank + 2) : (baseColsPerRank + 1);
+    // std::cout << "rank = "<< rank << ", local_cols = " << local_cols << std::endl; 
+
+    // --- Define the number of columns to update ---
+    int local_cols_to_update = local_cols - 2;
+    // std::cout << "rank = "<< rank << ", local_cols_to_update = " << local_cols_to_update << std::endl; 
     
-    // Define effective number of columns (points) as ny+1 --> same for every ran but called local for uniformity
-    int local_cols = ny + 1;
+    // --- Define effective number of rows (points) as nx+1(same for every rank but called local for uniformity) ---
+    int local_rows = nx + 1;
+    // std::cout << "rank = "<< rank << ", local_rows = " << local_rows << std::endl; 
 
-    //______________________________________________________________________________________
-    print_var("rank", rank);
-    print_var("local_rows", local_rows);
-    print_var("local_cols", local_cols);
+    // --- Define the number of rows to update ---
+    int local_rows_to_update = local_rows - 2;
+    std::cout << "rank = "<< rank << ", local_rows_to_update = " << local_rows_to_update << std::endl; 
+
+    // Initialization of physical data ____________________________________________________________
 
     // --- Initialize local grid data ---
-    ArrayXXd local_f   {local_rows-2, local_cols-2};
-    ArrayXXd local_u_ex{local_rows-2, local_cols-2}; // <-- va ricostruita alla fine per lo studio di convergenza
+    ArrayXXd local_f   {local_rows_to_update, local_cols_to_update};
+    ArrayXXd local_u_ex{local_rows_to_update, local_cols_to_update}; // <-- va ricostruita alla fine per lo studio di convergenza
 
-    // --- Fill grid data ---
-    
-    // Update all the rows of local forcing term and local exact solution
+    // --- Fill local forcing term and local exact solution ---
     #pragma omp parallel for collapse(2) schedule(static)
-    for(int i = 0; i < local_rows-2; ++i){
-        for(int j = 0; j < local_cols-2; ++j){
-            // Update directly for rank 0
-            if(rank==0){
-                local_f   (i, j) = force    (bl[0] + (i+1)*h, bl[1] + (j+1)*h);
-                local_u_ex(i, j) = exact_sol(bl[0] + (i+1)*h, bl[1] + (j+1)*h);
-            // Consider the offset in the grid along x axis for other ranks
-            }else{
-                local_f   (i, j) = force    (bl[0] + (row_offset + i)*h, bl[1] + (j+1)*h);
-                local_u_ex(i, j) = exact_sol(bl[0] + (row_offset + i)*h, bl[1] + (j+1)*h);
-            }
+    for(int i = 0; i < local_f.rows(); ++i){
+        for(int j = 0; j < local_f.cols(); ++j){
+            local_f   (i, j) = force    (bl[0] + (i+1)*h, bl[1] + (col_offset+j+1)*h);
+            local_u_ex(i, j) = exact_sol(bl[0] + (i+1)*h, bl[1] + (col_offset+j+1)*h);
         }
     }
 
-    // --- Initialize the local final solution matrix with ghost rows ---
+    // --- Check correctness ---
+    print_line();
+    for(int r = 0; r < size; ++r){
+        if(rank == r){
+            std::cout << "rank = "<< rank << ", local_f = " << local_f << std::endl;
+            std::cout << "rank = "<< rank << ", local_uex = " << local_u_ex << std::endl; 
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+    if(rank == 0){
+        print_line();
+        ArrayXXd uex_test{nx+1, ny+1};
+        ArrayXXd f_test{nx+1,ny+1};
+
+        #pragma omp parallel for collapse(2) schedule(static)
+        for(int i = 0; i < f_test.rows(); ++i){
+            for(int j = 0; j < f_test.cols(); ++j){
+                f_test  (i, j) = force    (bl[0] + i*h, bl[1] + j*h);
+                uex_test(i, j) = exact_sol(bl[0] + i*h, bl[1] + j*h);
+            }
+        }
+
+        print_var("uex", uex_test);
+        print_var("f", f_test);
+
+        print_line();
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // --- Initialize the local final solution matrix with ghost cols ---
     ArrayXXd local_U0{ArrayXXd::Zero(local_rows, local_cols)};
     ArrayXXd local_U {ArrayXXd::Zero(local_rows, local_cols)};
 
     // --- Apply boundary conditions to our candidate solution ---
-
     // Rank 0 : apply bottom boundary condition
-    if(rank == 0)
-        for(int j = 0; j < local_cols; ++j)
-            local_U(0, j) = exact_sol(bl[0], bl[1] + j*h);
-
-    
-
-    // Rank size-1 : apply top boundary condition
-    if(rank == size-1)
-        for(int j = 0; j < local_cols; ++j)
-            local_U(local_rows-1, j) = exact_sol(tr[0], bl[1] + j*h);
-    
-    
-    // Every rank : apply lateral condition    
-    for(int i = 1; i < local_rows-1; ++i){
-        local_U(i,0)            = exact_sol(bl[0] + (row_offset + i)*h, bl[1]);
-        local_U(i,local_cols-1) = exact_sol(bl[0] + (row_offset + i)*h, tr[1]);
+    if(rank == 0){
+        #pragma omp parallel for
+        for(int i = 0; i < local_rows; ++i)
+            local_U(i, 0) = exact_sol(bl[0]+i*h, bl[1]);
     }
 
+    // Rank size-1 : apply top boundary condition
+    if(rank == size-1){
+        #pragma omp parallel for
+        for(int i = 0; i < local_rows; ++i)
+            local_U(i, local_cols-1) = exact_sol(bl[0]+i*h, tr[1]);
+    }
+    
+    // Every rank : apply lateral condition
+    #pragma omp parallel for 
+    for(int j = 0; j < local_cols; ++j){
+        // Left
+        local_U(0,j) = exact_sol(bl[0], bl[1] + (col_offset+j)*h);
+
+        // Right
+        local_U(local_rows-1,j) = exact_sol(tr[0], bl[1] + (col_offset+j)*h);
+    }
+
+    // --- Set the initial guess ---
     local_U0 = local_U;
 
-    // if(rank==0){
-    //     print_var("localU0", local_U0);
-    //     print_var("localUex", local_u_ex);
-    // }
-
-    print_var("rank----------------------------", rank);
-    print_var("localU0", local_U0);
-    print_var("localUex", local_u_ex);
-
-    //______________________________________________________________________________________
+    // Solve ______________________________________________________________________________________
 
     // --- Initialize the solver ---
     Operator::Laplacian laplacian( 
-        /*local_f    = */ local_f,
-        /*h     = */ h
+        /*local_f = */ local_f,
+        /*h       = */ h
     );
 
     // --- Solve ---
+    // Diagnostic variables
     int global_converged = 0;
     int local_converged  = 0;
     int k;
 
+    // Actual loop(this can be optimized moving the logic outside ---> more verbosity)
     for(k = 0; k < maxIt; ++k){
-        // Reset local convergence
+        // --- Reset local convergence ---
         local_converged = 0; 
 
         // --- Send and receive necessary data of the common rows ---
-
-        // Exchange with upper rank --> send my top row, in the upper ghost row
+        // Exchange with upper rank --> send my last updated column, recieve the first updated column by the other rank
         if(rank < size-1)
             MPI_Sendrecv(
-                local_U0.row(local_rows-2).data(), local_cols, MPI_DOUBLE, rank+1, 0,
-                local_U0.row(local_rows-1).data(), local_cols, MPI_DOUBLE, rank+1, 1,
+                local_U0.col(local_cols-2).data(), local_rows, MPI_DOUBLE, rank+1, 0,
+                local_U0.col(local_cols-1).data(), local_rows, MPI_DOUBLE, rank+1, 1,
                 MPI_COMM_WORLD, MPI_STATUS_IGNORE
             );
-        // Exchange with lower rank --> send my bottom row, in the lower ghost row
+        // Exchange with lower rank --> send my first updated column, recieve the last updated column by the other rank
         if(rank > 0)
             MPI_Sendrecv(
-                local_U0.row(1).data(), local_cols, MPI_DOUBLE, rank-1, 1,
-                local_U0.row(0).data(), local_cols, MPI_DOUBLE, rank-1, 0,
+                local_U0.col(1).data(), local_rows, MPI_DOUBLE, rank-1, 1,
+                local_U0.col(0).data(), local_rows, MPI_DOUBLE, rank-1, 0,
                 MPI_COMM_WORLD, MPI_STATUS_IGNORE
             );
-        //  --- Apply the stencil to the local grid ---
+
+        // --- Apply the stencil to the local grid ---
         laplacian(local_U0, local_U);
 
         // --- Check global convergence ---
         // Retreive the internal part for which I want to test convergence
-        ArrayXXd diff = local_U - local_U0;
+        const ArrayXXd diff = local_U.block(1, 1, local_rows_to_update, local_cols_to_update) - local_U0.block(1, 1, local_rows_to_update, local_cols_to_update);
 
-        // Check local convergence (su cosa va testata? tol comune o va divisa?)
+        // Check local convergence
         if(std::sqrt(h*diff.square().sum()) < tol)
             local_converged = 1;
 
         // Check global convergence
+        MPI_Barrier(MPI_COMM_WORLD);
         MPI_Allreduce(&local_converged, &global_converged, 1, MPI_INT, MPI_LAND, MPI_COMM_WORLD);
 
         // Checks convergence
@@ -196,94 +232,108 @@ int main(int argc, char** argv){
             break;
 
         // Update step
-        local_U0 = local_U;
+        local_U0.swap(local_U);
     }
 
     // If convergence was not reached within maxIt print a message
     if(rank == 0){
-        print_var("k all'uscita ", k);
+        print_var("Total number of iterations", k);
 
         if(!global_converged){
             std::cout << "Jacobi iterations did not converge !" << std::endl;
             return 1;
         }
+        std::cout << "rank = "<< rank << ", local_U = " << local_U << std::endl;
     }
-
-    //______________________________________________________________________________________    
-
-    // --- Compose all the solution matrix ---
-
-    // Declare the empty variable for all the ranks
-    ArrayXXd global_U;
-
-    // Prepare to receive global U
-    std::vector<int> recvcounts(size, 0);
-    std::vector<int> offsets(size, 0);
-
-    if(rank == 0){
-        // Resize it only for rank 0
-        global_U.resize(nx+1, ny+1);
-
-        // int sum = 0;
-
-        // // Keep trace of how many elements each process has
-        // for(int i = 0; i < size; ++i) {
-        //     // int rows_i    = (i < unmatchedRows) ? (evenRows+1) : evenRows;
-        //     recvcounts[i] = (rows_i + 1) * (ny+1);
-        //     offsets[i]    = sum;
-        //     sum          += recvcounts[i];
-        // }
+    MPI_Barrier(MPI_COMM_WORLD);
+    if(rank == 1){
+        std::cout << "rank = "<< rank << ", local_U = " << local_U << std::endl;
     }
-    // Gather for recvcounts
-    int local_elements_to_send = (local_rows-2)*local_cols;
-    std::cout << "rank = " << rank << ", local_el = " << local_elements_to_send << std::endl;
     MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Allgather(
-        &local_elements_to_send, 1, MPI_INT,
-        recvcounts.data(), 1, MPI_INT, MPI_COMM_WORLD
-    );
-
-    int offset_to_send = 0; 
-    for(int i = 0; i < rank; ++i)
-        offset_to_send += recvcounts[i];
-
-    std::cout << "rank = " << rank << ", offset finale = " << offset_to_send << std::endl;
-
-    MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Allgather(
-        &offset_to_send, 1, MPI_INT,
-        offsets.data(),  1, MPI_INT, MPI_COMM_WORLD
-    );
-
-    // Gatherv just the internal part of U
-    MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Gatherv(
-        local_U.data() + local_cols, local_elements_to_send, MPI_DOUBLE,
-        global_U.data() + local_cols, recvcounts.data(), offsets.data(), MPI_DOUBLE,
-        0, MPI_COMM_WORLD
-    );
-
-    //______________________________________________________________________________________    
-
-    // --- Print the results ---
-
-    if(rank==0){
-        // Display the solution 
-        print_var("Global U", global_U);
-
-        // Print number of steps in which convergence is reached 
-        print_var("Convergence reached in n steps", k);
-
-        ArrayXXd Uex{nx+1, ny+1};
-
-        #pragma omp parallel for collapse(2) schedule(static)
-        for(int i = 0; i < nx+1; ++i)
-            for(int j = 0; j < ny+1; ++j)
-                Uex(i,j) = exact_sol(bl[0]+i*h, bl[1]+j*h);
-
-        print_var("Uex", Uex);
-
+    if(rank == 2){
+        std::cout << "rank = "<< rank << ", local_U = " << local_U << std::endl;
     }
+    MPI_Barrier(MPI_COMM_WORLD);
+    if(rank == 3){
+        std::cout << "rank = "<< rank << ", local_U = " << local_U << std::endl;
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // //______________________________________________________________________________________    
+
+    // // --- Compose all the solution matrix ---
+
+    // // Declare the empty variable for all the ranks
+    // ArrayXXd global_U;
+
+    // // Prepare to receive global U
+    // std::vector<int> recvcounts(size, 0);
+    // std::vector<int> offsets(size, 0);
+
+    // if(rank == 0){
+    //     // Resize it only for rank 0
+    //     global_U.resize(nx+1, ny+1);
+
+    //     // int sum = 0;
+
+    //     // // Keep trace of how many elements each process has
+    //     // for(int i = 0; i < size; ++i) {
+    //     //     // int rows_i    = (i < unmatchedRows) ? (evenRows+1) : evenRows;
+    //     //     recvcounts[i] = (rows_i + 1) * (ny+1);
+    //     //     offsets[i]    = sum;
+    //     //     sum          += recvcounts[i];
+    //     // }
+    // }
+    // // Gather for recvcounts
+    // int local_elements_to_send = (local_rows-2)*local_cols;
+    // std::cout << "rank = " << rank << ", local_el = " << local_elements_to_send << std::endl;
+    // MPI_Barrier(MPI_COMM_WORLD);
+    // MPI_Allgather(
+    //     &local_elements_to_send, 1, MPI_INT,
+    //     recvcounts.data(), 1, MPI_INT, MPI_COMM_WORLD
+    // );
+
+    // int offset_to_send = 0; 
+    // for(int i = 0; i < rank; ++i)
+    //     offset_to_send += recvcounts[i];
+
+    // std::cout << "rank = " << rank << ", offset finale = " << offset_to_send << std::endl;
+
+    // MPI_Barrier(MPI_COMM_WORLD);
+    // MPI_Allgather(
+    //     &offset_to_send, 1, MPI_INT,
+    //     offsets.data(),  1, MPI_INT, MPI_COMM_WORLD
+    // );
+
+    // // Gatherv just the internal part of U
+    // MPI_Barrier(MPI_COMM_WORLD);
+    // MPI_Gatherv(
+    //     local_U.data() + local_cols, local_elements_to_send, MPI_DOUBLE,
+    //     global_U.data() + local_cols, recvcounts.data(), offsets.data(), MPI_DOUBLE,
+    //     0, MPI_COMM_WORLD
+    // );
+
+    // //______________________________________________________________________________________    
+
+    // // --- Print the results ---
+
+    // if(rank==0){
+    //     // Display the solution 
+    //     print_var("Global U", global_U);
+
+    //     // Print number of steps in which convergence is reached 
+    //     print_var("Convergence reached in n steps", k);
+
+    //     ArrayXXd Uex{nx+1, ny+1};
+
+    //     #pragma omp parallel for collapse(2) schedule(static)
+    //     for(int i = 0; i < nx+1; ++i)
+    //         for(int j = 0; j < ny+1; ++j)
+    //             Uex(i,j) = exact_sol(bl[0]+i*h, bl[1]+j*h);
+
+    //     print_var("Uex", Uex);
+
+    // }
         
     // Close MPI environment
     MPI_Finalize();
