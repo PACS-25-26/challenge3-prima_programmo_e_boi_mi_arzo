@@ -15,7 +15,7 @@
 int main(int argc, char** argv){
     
     // Alias __________________________________________________________________________________
-    using ArrayXXd = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic/*, Eigen::RowMajor*/>;
+    using ArrayXXd = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic>;
 
     // MPI setup ______________________________________________________________________________
     int provided;
@@ -100,10 +100,7 @@ int main(int argc, char** argv){
     MPI_Barrier(MPI_COMM_WORLD);
     int evenCols        = (ny+1) / size;
     int unmatchedCols   = (ny+1) % size - 1;
-    int baseColsPerRank = (static_cast<int>(rank) < unmatchedCols) ? (evenCols+1) : evenCols; 
-    // std::cout << "rank = "<< rank << ", evenCols = " << evenCols << std::endl;
-    // std::cout << "rank = "<< rank << ", unmatchedCols = " << unmatchedCols << std::endl; 
-    // std::cout << "rank = "<< rank << ", baseColsPerRank = " << baseColsPerRank << std::endl; 
+    int baseColsPerRank = (static_cast<int>(rank) < unmatchedCols) ? (evenCols+1) : evenCols;
 
     // --- Compute the offset in terms of cols from 0 ---
     int col_offset = 0;
@@ -111,23 +108,18 @@ int main(int argc, char** argv){
         col_offset += (r < unmatchedCols) ? (evenCols+1) : evenCols;
     if(rank != 0)
         col_offset -= 1;
-    // std::cout << "rank = "<< rank << ", col_offset = " << col_offset << std::endl; 
 
     // --- Define effective number of cols (points) ---
     int local_cols = (rank != 0) ? (baseColsPerRank + 2) : (baseColsPerRank + 1);
-    // std::cout << "rank = "<< rank << ", local_cols = " << local_cols << std::endl; 
 
     // --- Define the number of columns to update ---
     int local_cols_to_update = local_cols - 2;
-    // std::cout << "rank = "<< rank << ", local_cols_to_update = " << local_cols_to_update << std::endl; 
     
     // --- Define effective number of rows (points) as nx+1(same for every rank but called local for uniformity) ---
     int local_rows = nx + 1;
-    // std::cout << "rank = "<< rank << ", local_rows = " << local_rows << std::endl; 
 
     // --- Define the number of rows to update ---
     int local_rows_to_update = local_rows - 2;
-    std::cout << "rank = "<< rank << ", local_rows_to_update = " << local_rows_to_update << std::endl; 
 
     // Initialization of physical data ____________________________________________________________
 
@@ -144,33 +136,6 @@ int main(int argc, char** argv){
         }
     }
 
-    // --- Check correctness ---
-    print_line();
-    for(int r = 0; r < size; ++r){
-        if(rank == r){
-            std::cout << "rank = "<< rank << ", local_f = " << local_f << std::endl;
-            std::cout << "rank = "<< rank << ", local_uex = " << local_u_ex << std::endl; 
-        }
-        MPI_Barrier(MPI_COMM_WORLD);
-    }
-    if(rank == 0){
-        print_line();
-        ArrayXXd uex_test{nx+1, ny+1};
-        ArrayXXd f_test{nx+1,ny+1};
-
-        #pragma omp parallel for collapse(2) schedule(static)
-        for(int i = 0; i < f_test.rows(); ++i){
-            for(int j = 0; j < f_test.cols(); ++j){
-                f_test  (i, j) = force    (bl[0] + i*h, bl[1] + j*h);
-                uex_test(i, j) = exact_sol(bl[0] + i*h, bl[1] + j*h);
-            }
-        }
-
-        print_var("uex", uex_test);
-        print_var("f", f_test);
-
-        print_line();
-    }
     MPI_Barrier(MPI_COMM_WORLD);
 
     // --- Initialize the local final solution matrix with ghost cols ---
@@ -219,6 +184,9 @@ int main(int argc, char** argv){
     int local_converged  = 0;
     int k;
 
+    // --- Start profiling ---
+    const auto start = std::chrono::high_resolution_clock::now();
+
     // Actual loop(this can be optimized moving the logic outside ---> more verbosity)
     for(k = 0; k < maxIt; ++k){
         // --- Reset local convergence ---
@@ -263,6 +231,11 @@ int main(int argc, char** argv){
         local_U0.swap(local_U);
     }
 
+    // --- End profiling ---
+    const auto end = std::chrono::high_resolution_clock::now();
+    const std::chrono::duration<double> elapsed = end - start;
+    std::cout << "Total elapsed time on rank " << rank << " = " << elapsed.count() << std::endl; 
+
     // If convergence was not reached within maxIt print a message
     if(rank == 0){
         print_var("Total number of iterations", k);
@@ -271,21 +244,7 @@ int main(int argc, char** argv){
             std::cout << "Jacobi iterations did not converge !" << std::endl;
             return 1;
         }
-        std::cout << "rank = "<< rank << ", local_U = " << local_U << std::endl;
     }
-    MPI_Barrier(MPI_COMM_WORLD);
-    if(rank == 1){
-        std::cout << "rank = "<< rank << ", local_U = " << local_U << std::endl;
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-    if(rank == 2){
-        std::cout << "rank = "<< rank << ", local_U = " << local_U << std::endl;
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-    if(rank == 3){
-        std::cout << "rank = "<< rank << ", local_U = " << local_U << std::endl;
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
 
     // Compute error in L2 norm _______________________________________________________________
     const ArrayXXd residual = local_U.block(1, 1, local_rows_to_update, local_cols_to_update) - local_u_ex;
@@ -308,7 +267,7 @@ int main(int argc, char** argv){
         print_var("||u_ex - u_h||_L2", global_L2);
     }
         
-    // Close MPI environment
+    // Close MPI environment __________________________________________________________________
     MPI_Finalize();
 
     return 0;
