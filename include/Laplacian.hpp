@@ -3,64 +3,35 @@
 
 #include <Eigen/Dense>
 #include <omp.h>
+#include <iostream>
 
 namespace Operator{
 
-/// @brief  Template class to apply the laplacian stencil with ceneterd finite differences of order 2
-/// @tparam Nx Number of subinterval in direction x
-/// @tparam Ny Number of subinterval in direction y
-template <int Nx, int Ny>
 class Laplacian{
 
+    using ArrayXXd = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic/*, Eigen::RowMajor*/>;
+
     private:
-        const Eigen::Array<double, Nx+1, 1>       bcTop;
-        const Eigen::Array<double, Nx+1, 1>       bcBottom;
-        const Eigen::Array<double, Ny+1, 1>       bcLeft;
-        const Eigen::Array<double, Ny+1, 1>       bcRight;
-        const Eigen::Array<double, Nx+1, Ny+1>    f;
+        const Eigen::ArrayXXd f;
         const double h2;
     
     public:
+
         Laplacian(
-            const Eigen::Array<double, 1, Nx+1>& bcT,
-            const Eigen::Array<double, 1, Nx+1>& bcB,
-            const Eigen::Array<double, Ny+1, 1>& bcL,
-            const Eigen::Array<double, Ny+1, 1>& bcR,
-            const Eigen::Array<double, Nx+1, Ny+1>& f_,
+            const ArrayXXd& f_,
             const double h_
-        ) : bcTop{bcT},
-            bcBottom{bcB},
-            bcLeft{bcL},
-            bcRight{bcR},
+        ) : 
             f{f_},
             h2{h_*h_}
             {}
 
-        void operator()(const Eigen::Array<double, Nx+1, Ny+1>& src, Eigen::Array<double, Nx+1, Ny+1>& dest){
-
-            // // Apply the stencil
-            // dest.template block<Nx-1, Ny-1>(1, 1) = 
-            //     0.25*(
-            //         src.template    block  <Nx-1, Ny-1>(0, 1)     // top
-            //         + src.template  block  <Nx-1, Ny-1>(1, 0)        // left
-            //         + src.template  block  <Nx-1, Ny-1>(1, 2)        // right
-            //         + src.template  block  <Nx-1, Ny-1>(2, 1)        // bottom
-            //         + h2*f.template block  <Nx-1, Ny-1>(1, 1)
-            //     );    // forcing term
-
-            // Alternatively a parallel implementation
+        void operator()(const ArrayXXd& src, ArrayXXd& dest){
+            
+            // Parallel for to apply the stencil implementation
             #pragma omp parallel for collapse(2) schedule(static)
-            for(int i = 1; i <= Nx-1; ++i)
-                for(int j = 1; j <= Ny-1; ++j)
-                    dest(i,j) = 0.25*(src(i-1,j) + src(i+1,j) + src(i,j-1) + src(i,j+1) + h2*f(i,j));
-
-
-            // Enforce boundary condition(Dirichlet type)
-            dest.row(0)             = bcBottom;
-            dest.row(dest.rows()-1) = bcTop;
-            dest.col(0)             = bcLeft;
-            dest.col(dest.cols()-1) = bcRight;
-         
+            for(unsigned i = 1; i < src.rows()-1; ++i)
+                for(unsigned j = 1; j < src.cols()-1; ++j)
+                    dest(i,j) = 0.25*(src(i-1,j) + src(i+1,j) + src(i,j-1) + src(i,j+1) + h2*f(i-1,j-1));
         }
 };
 
