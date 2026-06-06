@@ -287,81 +287,26 @@ int main(int argc, char** argv){
     }
     MPI_Barrier(MPI_COMM_WORLD);
 
-    // //______________________________________________________________________________________    
+    // Compute error in L2 norm _______________________________________________________________
+    const ArrayXXd residual = local_U.block(1, 1, local_rows_to_update, local_cols_to_update) - local_u_ex;
+    double local_squared_residual_sum = residual.square().sum();
 
-    // // --- Compose all the solution matrix ---
+    double global_squared_residual_sum;
+    MPI_Reduce(
+        &local_squared_residual_sum,
+        &global_squared_residual_sum,
+        1,
+        MPI_DOUBLE,
+        MPI_SUM,
+        0,
+        MPI_COMM_WORLD
+    );
 
-    // // Declare the empty variable for all the ranks
-    // ArrayXXd global_U;
-
-    // // Prepare to receive global U
-    // std::vector<int> recvcounts(size, 0);
-    // std::vector<int> offsets(size, 0);
-
-    // if(rank == 0){
-    //     // Resize it only for rank 0
-    //     global_U.resize(nx+1, ny+1);
-
-    //     // int sum = 0;
-
-    //     // // Keep trace of how many elements each process has
-    //     // for(int i = 0; i < size; ++i) {
-    //     //     // int rows_i    = (i < unmatchedRows) ? (evenRows+1) : evenRows;
-    //     //     recvcounts[i] = (rows_i + 1) * (ny+1);
-    //     //     offsets[i]    = sum;
-    //     //     sum          += recvcounts[i];
-    //     // }
-    // }
-    // // Gather for recvcounts
-    // int local_elements_to_send = (local_rows-2)*local_cols;
-    // std::cout << "rank = " << rank << ", local_el = " << local_elements_to_send << std::endl;
-    // MPI_Barrier(MPI_COMM_WORLD);
-    // MPI_Allgather(
-    //     &local_elements_to_send, 1, MPI_INT,
-    //     recvcounts.data(), 1, MPI_INT, MPI_COMM_WORLD
-    // );
-
-    // int offset_to_send = 0; 
-    // for(int i = 0; i < rank; ++i)
-    //     offset_to_send += recvcounts[i];
-
-    // std::cout << "rank = " << rank << ", offset finale = " << offset_to_send << std::endl;
-
-    // MPI_Barrier(MPI_COMM_WORLD);
-    // MPI_Allgather(
-    //     &offset_to_send, 1, MPI_INT,
-    //     offsets.data(),  1, MPI_INT, MPI_COMM_WORLD
-    // );
-
-    // // Gatherv just the internal part of U
-    // MPI_Barrier(MPI_COMM_WORLD);
-    // MPI_Gatherv(
-    //     local_U.data() + local_cols, local_elements_to_send, MPI_DOUBLE,
-    //     global_U.data() + local_cols, recvcounts.data(), offsets.data(), MPI_DOUBLE,
-    //     0, MPI_COMM_WORLD
-    // );
-
-    // //______________________________________________________________________________________    
-
-    // // --- Print the results ---
-
-    // if(rank==0){
-    //     // Display the solution 
-    //     print_var("Global U", global_U);
-
-    //     // Print number of steps in which convergence is reached 
-    //     print_var("Convergence reached in n steps", k);
-
-    //     ArrayXXd Uex{nx+1, ny+1};
-
-    //     #pragma omp parallel for collapse(2) schedule(static)
-    //     for(int i = 0; i < nx+1; ++i)
-    //         for(int j = 0; j < ny+1; ++j)
-    //             Uex(i,j) = exact_sol(bl[0]+i*h, bl[1]+j*h);
-
-    //     print_var("Uex", Uex);
-
-    // }
+    MPI_Barrier(MPI_COMM_WORLD);
+    if(rank == 0){
+        const double global_L2 = std::sqrt(h*global_squared_residual_sum);
+        print_var("||u_ex - u_h||_L2", global_L2);
+    }
         
     // Close MPI environment
     MPI_Finalize();

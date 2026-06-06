@@ -1,5 +1,5 @@
 {
-    "N_ref"     : 4,
+    "N_ref"     : 8,
     "tol"       : 1e-8,
     "maxIt"     : 1e6
 }
